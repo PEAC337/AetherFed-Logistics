@@ -1,0 +1,7 @@
+{
+  "name": "AetherFed Logistics",
+  "description": "A sophisticated, micro-driven platform for comprehensive order management, shipping logistics, payment processing, and AI-powered drone delivery tracking and feedback analysis.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
