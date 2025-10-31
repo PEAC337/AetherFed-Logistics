@@ -74,6 +74,7 @@ export interface Drone {
     currentPatrolWaypoint?: number;
     flightHours: number;
     nextMaintenance: string;
+    destination?: { x: number; y: number };
 }
 
 export interface FeedbackItem {

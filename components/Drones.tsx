@@ -1,10 +1,11 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Drone } from '../types';
 import { DroneStatus } from '../types';
 import { optimizeRoute, getSituationalAwarenessInfo } from '../services/geminiService';
-import { Bot, Battery, Signal, Thermometer, ArrowUp, HeartPulse, MapPin, Loader2, Sparkles, AlertTriangle, Info, Siren } from 'lucide-react';
+import { Bot, Battery, Signal, Thermometer, ArrowUp, HeartPulse, MapPin, Loader2, Sparkles, AlertTriangle, Info, Siren, Send } from 'lucide-react';
 
 const mockDrones: Drone[] = [
   {
@@ -95,6 +96,7 @@ const Drones: React.FC = () => {
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [situationalInfo, setSituationalInfo] = useState<{ text: string; groundingChunks: any[] } | null>(null);
     const [collisionAlerts, setCollisionAlerts] = useState<string[][]>([]);
+    const [manualDest, setManualDest] = useState<{x: string, y: string}>({ x: '80', y: '50' });
 
     const handleOptimizeRoute = async () => {
         if (!selectedDrone || !selectedDrone.patrolPath || selectedDrone.missionType !== 'Patrol') return;
@@ -121,19 +123,67 @@ const Drones: React.FC = () => {
         setIsFetchingInfo(false);
     };
 
+    const handleSetDestination = () => {
+        if (!selectedDrone || !manualDest.x || !manualDest.y) return;
+
+        const destX = parseFloat(manualDest.x);
+        const destY = parseFloat(manualDest.y);
+
+        if (isNaN(destX) || isNaN(destY) || destX < 0 || destX > 100 || destY < 0 || destY > 100) {
+            alert("Please enter valid coordinates between 0 and 100.");
+            return;
+        }
+
+        const updatedDrones = drones.map(d => {
+            if (d.id === selectedDrone.id) {
+                return { 
+                    ...d, 
+                    status: DroneStatus.InTransit, 
+                    destination: { x: destX, y: destY },
+                    patrolPath: undefined,
+                    currentPatrolWaypoint: undefined,
+                    // FIX: Use 'as const' to prevent TypeScript from widening the string literal type to 'string'.
+                    // This ensures the object conforms to the Drone type.
+                    missionType: 'Delivery' as const
+                };
+            }
+            return d;
+        });
+        const newlySelectedDrone = updatedDrones.find(d => d.id === selectedDrone.id) || null;
+        setDrones(updatedDrones);
+        setSelectedDrone(newlySelectedDrone);
+    };
+
     // Drone simulation and collision detection
     useEffect(() => {
         const interval = setInterval(() => {
-            // Update drone positions for simulation
             const updatedDrones = drones.map(drone => {
-                if ([DroneStatus.Delivering, DroneStatus.InTransit, DroneStatus.Returning, DroneStatus.Patrolling].includes(drone.status)) {
-                    // Simple random walk for simulation
+                // Manually dispatched drone movement
+                if (drone.status === DroneStatus.InTransit && drone.destination) {
+                    const speed = 2.0; // units per interval
+                    const dx = drone.destination.x - drone.position.x;
+                    const dy = drone.destination.y - drone.position.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < speed) {
+                        return { ...drone, position: drone.destination, status: DroneStatus.Idle, destination: undefined };
+                    }
+
+                    const moveX = (dx / distance) * speed;
+                    const moveY = (dy / distance) * speed;
+                    return { ...drone, position: { x: drone.position.x + moveX, y: drone.position.y + moveY } };
+                }
+
+                // Random walk for other active statuses
+                if ([DroneStatus.Delivering, DroneStatus.Returning, DroneStatus.Patrolling].includes(drone.status)) {
                     const newX = Math.max(0, Math.min(100, drone.position.x + (Math.random() - 0.5) * 2));
                     const newY = Math.max(0, Math.min(100, drone.position.y + (Math.random() - 0.5) * 2));
                     return { ...drone, position: { x: newX, y: newY } };
                 }
+
                 return drone;
             });
+
 
             // Collision Detection
             const alerts: string[][] = [];
@@ -213,6 +263,20 @@ const Drones: React.FC = () => {
                                 <div className="relative h-full w-full bg-gray-900 rounded-md overflow-hidden border-2 border-gray-700">
                                     <div className="absolute inset-0 bg-transparent" style={{ backgroundSize: '40px 40px', backgroundImage: 'linear-gradient(to right, #4a556820 1px, transparent 1px), linear-gradient(to bottom, #4a556820 1px, transparent 1px)' }}></div>
                                     {selectedDrone.patrolPath && (<svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}><polyline points={selectedDrone.patrolPath.map(p => `${p.x}%,${p.y}%`).join(' ')} fill="none" stroke="#8b5cf6" strokeWidth="2" strokeDasharray="4 4"/>{selectedDrone.patrolPath.map((p, i) => (<circle key={i} cx={`${p.x}%`} cy={`${p.y}%`} r="4" fill={i === selectedDrone.currentPatrolWaypoint ? "#a78bfa" : "#4c1d95"} />))}</svg>)}
+                                    {selectedDrone?.destination && (
+                                        <>
+                                            <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                                                <line
+                                                    x1={`${selectedDrone.position.x}%`} y1={`${selectedDrone.position.y}%`}
+                                                    x2={`${selectedDrone.destination.x}%`} y2={`${selectedDrone.destination.y}%`}
+                                                    stroke="#0ea5e9" strokeWidth="2" strokeDasharray="5 5"
+                                                />
+                                            </svg>
+                                            <div className="absolute" style={{ left: `${selectedDrone.destination.x}%`, top: `${selectedDrone.destination.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                                <MapPin className="h-8 w-8 text-green-400 animate-pulse" />
+                                            </div>
+                                        </>
+                                    )}
                                     {drones.map(d => (
                                         <div key={d.id} className="absolute transition-transform duration-1000 ease-linear" style={{ left: `${d.position.x}%`, top: `${d.position.y}%`, transform: 'translate(-50%, -50%)' }}>
                                             {dronesInCollision.has(d.id) ? <Siren className="h-8 w-8 text-red-500 animate-ping" /> : <Bot className={`h-7 w-7 ${d.id === selectedDrone.id ? 'text-cyan-300 scale-125' : 'text-cyan-500'}`} />}
@@ -244,6 +308,37 @@ const Drones: React.FC = () => {
                                      <button onClick={handleGetInfo} disabled={isFetchingInfo} className="flex-1 flex items-center justify-center bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{isFetchingInfo ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />Fetching...</> : <><Info className="h-5 w-5 mr-2" />Get Situational Awareness</>}</button>
                                 </div>
                                 {situationalInfo && (<div className="mt-4 p-4 bg-gray-700/50 rounded-lg"><h4 className="font-semibold text-cyan-400 mb-2">Gemini Analysis:</h4><p className="text-sm text-gray-300 whitespace-pre-wrap">{situationalInfo.text}</p>{situationalInfo.groundingChunks.length > 0 && (<div className="mt-3 border-t border-gray-600 pt-3"><h5 className="text-xs font-bold text-gray-400 mb-2">SOURCES:</h5><div className="flex flex-wrap gap-2">{situationalInfo.groundingChunks.map((chunk, index) => chunk.maps && (<a href={chunk.maps.uri} key={index} target="_blank" rel="noopener noreferrer" className="text-xs bg-gray-600 hover:bg-gray-500 text-cyan-300 px-2 py-1 rounded-md flex items-center gap-1"><MapPin className="h-3 w-3" /> {chunk.maps.title}</a>))}</div></div>)}</div>)}
+                            </div>
+
+                            <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+                                <h3 className="text-lg font-semibold mb-4">Manual Control</h3>
+                                <div className="space-y-3">
+                                    <p className="text-sm text-gray-400">Set a new destination. Only available for 'Idle' or 'Patrolling' drones.</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1">
+                                            <label htmlFor="dest-x" className="text-xs text-gray-400">X Coordinate</label>
+                                            <input
+                                                type="number" id="dest-x" value={manualDest.x}
+                                                onChange={(e) => setManualDest({ ...manualDest, x: e.target.value })}
+                                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-2 text-white"
+                                                placeholder="0-100" min="0" max="100"
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label htmlFor="dest-y" className="text-xs text-gray-400">Y Coordinate</label>
+                                            <input
+                                                type="number" id="dest-y" value={manualDest.y}
+                                                onChange={(e) => setManualDest({ ...manualDest, y: e.target.value })}
+                                                className="w-full bg-gray-900 border border-gray-700 rounded-md p-2 text-white"
+                                                placeholder="0-100" min="0" max="100"
+                                            />
+                                        </div>
+                                    </div>
+                                    <button onClick={handleSetDestination} disabled={selectedDrone.status !== DroneStatus.Idle && selectedDrone.status !== DroneStatus.Patrolling} className="w-full flex items-center justify-center bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <Send className="h-5 w-5 mr-2" />
+                                        Dispatch Drone
+                                    </button>
+                                </div>
                             </div>
                         </>
                     ) : (
