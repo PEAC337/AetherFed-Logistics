@@ -3,6 +3,32 @@ import { AnalyzedFeedback } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
+// Helper function for retrying API calls with exponential backoff
+const withRetry = async <T>(apiCall: () => Promise<T>, context: string, maxRetries = 3): Promise<T | null> => {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+        try {
+            const result = await apiCall();
+            // A successful call might still not return the data we need. Throw to retry.
+            if (result === null || result === undefined) {
+                 throw new Error("API call returned null or undefined.");
+            }
+            return result;
+        } catch (error) {
+            attempt++;
+            console.error(`Error ${context} (attempt ${attempt}):`, error);
+            if (attempt < maxRetries) {
+                await new Promise(res => setTimeout(res, 1000 * attempt)); // e.g., 1s, 2s
+            } else {
+                console.error(`Failed to ${context} after ${maxRetries} attempts.`);
+                return null;
+            }
+        }
+    }
+    return null;
+};
+
+
 const feedbackResponseSchema = {
     type: Type.OBJECT,
     properties: {
@@ -45,7 +71,7 @@ const routeOptimizationSchema = {
 }
 
 export const analyzeFeedback = async (feedbackText: string): Promise<AnalyzedFeedback | null> => {
-    try {
+    return withRetry(async () => {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Analyze the following customer feedback and provide the sentiment, a summary, and keywords. Feedback: "${feedbackText}"`,
@@ -56,32 +82,22 @@ export const analyzeFeedback = async (feedbackText: string): Promise<AnalyzedFee
         });
 
         const jsonString = response.text.trim();
-        const parsedData: AnalyzedFeedback = JSON.parse(jsonString);
-        return parsedData;
-
-    } catch (error) {
-        console.error("Error analyzing feedback with Gemini API:", error);
-        return null;
-    }
+        return JSON.parse(jsonString) as AnalyzedFeedback;
+    }, "analyzing feedback");
 };
 
 export const getFaaRegulationSummary = async (): Promise<string | null> => {
-    try {
+    return withRetry(async () => {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Summarize key FAA Part 107 regulations for drone pilots. Focus on: maximum altitude, visual line of sight (VLOS), operating over people, night operations, and airspace rules. Format as bullet points for a dashboard.`,
         });
-
         return response.text;
-
-    } catch (error) {
-        console.error("Error fetching FAA summary from Gemini API:", error);
-        return null;
-    }
+    }, "fetching FAA summary");
 };
 
 export const generateImage = async (prompt: string, aspectRatio: string): Promise<string | null> => {
-    try {
+    return withRetry(async () => {
         const response = await ai.models.generateImages({
             model: 'imagen-4.0-generate-001',
             prompt: prompt,
@@ -97,33 +113,20 @@ export const generateImage = async (prompt: string, aspectRatio: string): Promis
             return `data:image/jpeg;base64,${base64ImageBytes}`;
         }
         return null;
-
-    } catch (error) {
-        console.error("Error generating image with Imagen API:", error);
-        return null;
-    }
+    }, "generating image");
 };
 
 export const editImageWithText = async (base64ImageData: string, mimeType: string, prompt: string): Promise<string | null> => {
-    try {
+    return withRetry(async () => {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: {
                 parts: [
-                    {
-                        inlineData: {
-                            data: base64ImageData,
-                            mimeType: mimeType,
-                        },
-                    },
-                    {
-                        text: prompt,
-                    },
+                    { inlineData: { data: base64ImageData, mimeType: mimeType } },
+                    { text: prompt },
                 ],
             },
-            config: {
-                responseModalities: [Modality.IMAGE],
-            },
+            config: { responseModalities: [Modality.IMAGE] },
         });
 
         for (const part of response.candidates[0].content.parts) {
@@ -133,57 +136,40 @@ export const editImageWithText = async (base64ImageData: string, mimeType: strin
             }
         }
         return null;
-
-    } catch (error) {
-        console.error("Error editing image with Gemini API:", error);
-        return null;
-    }
+    }, "editing image");
 };
 
-
 export const getSituationalAwarenessInfo = async (query: string, location: { latitude: number; longitude: number; }): Promise<{ text: string; groundingChunks: any[] } | null> => {
-    try {
+    return withRetry(async () => {
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: query,
             config: {
                 tools: [{googleMaps: {}}],
-                toolConfig: {
-                    retrievalConfig: {
-                        latLng: location
-                    }
-                }
+                toolConfig: { retrievalConfig: { latLng: location } }
             },
         });
         const text = response.text;
         const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         return { text, groundingChunks };
-    } catch (error) {
-        console.error("Error fetching Maps Grounding info from Gemini API:", error);
-        return null;
-    }
+    }, "fetching Maps Grounding info");
 };
 
 export const getGroundedNews = async (query: string): Promise<{ text: string; groundingChunks: any[] } | null> => {
-    try {
+    return withRetry(async () => {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: query,
-            config: {
-                tools: [{googleSearch: {}}],
-            },
+            config: { tools: [{googleSearch: {}}] },
         });
         const text = response.text;
         const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         return { text, groundingChunks };
-    } catch (error) {
-        console.error("Error fetching grounded news from Gemini API:", error);
-        return null;
-    }
+    }, "fetching grounded news");
 };
 
 export const optimizeRoute = async (waypoints: {x: number, y: number}[]): Promise<{x: number, y: number}[] | null> => {
-    try {
+    return withRetry(async () => {
         const prompt = `Given the following list of patrol waypoints, reorder them to create the most efficient route, returning to the first point at the end. The route should be a continuous loop. Waypoints: ${JSON.stringify(waypoints)}`;
 
         const response = await ai.models.generateContent({
@@ -198,9 +184,5 @@ export const optimizeRoute = async (waypoints: {x: number, y: number}[]): Promis
         const jsonString = response.text.trim();
         const parsedData = JSON.parse(jsonString);
         return parsedData.optimizedPath;
-
-    } catch (error) {
-        console.error("Error optimizing route with Gemini API:", error);
-        return null;
-    }
+    }, "optimizing route");
 };
