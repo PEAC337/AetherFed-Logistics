@@ -1,3 +1,4 @@
+// FIX: Removed self-import of `OrderStatus` which was causing a conflict.
 export enum OrderStatus {
   Pending = 'Pending',
   Processing = 'Processing',
@@ -62,9 +63,17 @@ export interface Drone {
       temperature: number; // New: In Celsius
       altitude: number; // New: In meters
     }
+    telemetryHistory?: {
+        time: number;
+        signal: number;
+        temp: number;
+        alt: number;
+    }[];
     missionType?: 'Delivery' | 'Patrol';
     patrolPath?: { x: number; y: number }[];
     currentPatrolWaypoint?: number;
+    flightHours: number;
+    nextMaintenance: string;
 }
 
 export interface FeedbackItem {
@@ -79,4 +88,42 @@ export interface AnalyzedFeedback {
     sentiment: 'Positive' | 'Negative' | 'Neutral';
     summary: string;
     keywords: string[];
+}
+
+export enum InvoiceStatus {
+    Paid = 'Paid',
+    Due = 'Due',
+    Overdue = 'Overdue'
+}
+
+export interface InvoiceItem {
+    invoiceId: string;
+    date: string;
+    serviceDescription: string;
+    droneId?: string;
+    durationHours?: number;
+    rate?: number;
+    amount: number;
+    status: InvoiceStatus;
+}
+
+export enum MaintenanceStatus {
+    Scheduled = 'Scheduled',
+    InProgress = 'In Progress',
+    Completed = 'Completed'
+}
+
+export enum MaintenanceType {
+    Routine = 'Routine Check-up',
+    Repair = 'Component Repair',
+    Software = 'Software Update'
+}
+
+export interface MaintenanceEvent {
+    id: string;
+    droneId: string;
+    scheduledDate: string;
+    type: MaintenanceType;
+    status: MaintenanceStatus;
+    notes: string;
 }

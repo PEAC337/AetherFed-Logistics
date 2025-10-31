@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ViewType } from '../App';
-import { Home, Package, Truck, Bot, MessageSquare, Image } from 'lucide-react';
+import { Home, Package, Truck, Bot, MessageSquare, Image, CreditCard, Wrench, Wand2 } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -13,8 +13,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
     { id: 'orders', label: 'Orders', icon: Package },
     { id: 'shipping', label: 'Shipping', icon: Truck },
     { id: 'drones', label: 'Drone Fleet', icon: Bot },
+    { id: 'maintenance', label: 'Maintenance', icon: Wrench },
+    { id: 'billing', label: 'Billing', icon: CreditCard },
     { id: 'feedback', label: 'Feedback', icon: MessageSquare },
     { id: 'imageGenerator', label: 'Image Studio', icon: Image },
+    { id: 'imageEditor', label: 'Image Editor', icon: Wand2 },
   ] as const;
 
   return (

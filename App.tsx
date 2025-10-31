@@ -6,8 +6,11 @@ import Shipping from './components/Shipping';
 import Drones from './components/Drones';
 import Feedback from './components/Feedback';
 import ImageGenerator from './components/ImageGenerator';
+import ImageEditor from './components/ImageEditor';
+import Billing from './components/Billing';
+import Maintenance from './components/Maintenance';
 
-export type ViewType = 'dashboard' | 'orders' | 'shipping' | 'drones' | 'feedback' | 'imageGenerator';
+export type ViewType = 'dashboard' | 'orders' | 'shipping' | 'drones' | 'feedback' | 'imageGenerator' | 'imageEditor' | 'billing' | 'maintenance';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -26,6 +29,12 @@ const App: React.FC = () => {
         return <Feedback />;
       case 'imageGenerator':
         return <ImageGenerator />;
+      case 'imageEditor':
+        return <ImageEditor />;
+      case 'billing':
+        return <Billing />;
+      case 'maintenance':
+        return <Maintenance />;
       default:
         return <Dashboard />;
     }

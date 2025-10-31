@@ -1,7 +1,7 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { DollarSign, Package, Users, Truck } from 'lucide-react';
+import { DollarSign, Package, Users, Truck, Loader2, Link as LinkIcon, Newspaper } from 'lucide-react';
+import { getGroundedNews } from '../services/geminiService';
 
 const salesData = [
   { name: 'Jan', sales: 4000 },
@@ -32,6 +32,51 @@ const MetricCard: React.FC<{ title: string; value: string; icon: React.ElementTy
     </div>
   </div>
 );
+
+const NewsPanel: React.FC = () => {
+    const [news, setNews] = useState<{ text: string; groundingChunks: any[] } | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchNews = async () => {
+            setIsLoading(true);
+            const result = await getGroundedNews("Summarize the top 3 latest news headlines and breakthroughs in the drone logistics and autonomous delivery industry.");
+            setNews(result);
+            setIsLoading(false);
+        };
+        fetchNews();
+    }, []);
+
+    return (
+        <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-semibold mb-4 flex items-center"><Newspaper className="h-6 w-6 mr-3 text-cyan-400"/>Industry News & Updates</h2>
+            {isLoading ? (
+                <div className="flex items-center justify-center h-48">
+                    <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+                </div>
+            ) : news ? (
+                <div className="space-y-4">
+                    <p className="text-gray-300 whitespace-pre-wrap text-sm">{news.text}</p>
+                    {news.groundingChunks.length > 0 && (
+                        <div className="pt-3 border-t border-gray-700">
+                             <h3 className="text-xs font-bold text-gray-400 mb-2">SOURCES:</h3>
+                             <div className="flex flex-col space-y-2">
+                                {news.groundingChunks.map((chunk, index) => chunk.web && (
+                                    <a href={chunk.web.uri} key={index} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline truncate flex items-center gap-1.5">
+                                        <LinkIcon className="h-3 w-3 flex-shrink-0" /> {chunk.web.title}
+                                    </a>
+                                ))}
+                             </div>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <p className="text-gray-500">Could not fetch news at this time.</p>
+            )}
+        </div>
+    );
+};
+
 
 const Dashboard: React.FC = () => {
   return (
@@ -83,6 +128,7 @@ const Dashboard: React.FC = () => {
           </ResponsiveContainer>
         </div>
       </div>
+      <NewsPanel />
     </div>
   );
 };
