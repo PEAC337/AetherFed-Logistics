@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import type { Drone } from '../types';
+import type { Drone, SituationalAwarenessData } from '../types';
 import { DroneStatus } from '../types';
 import { optimizeRoute, getSituationalAwarenessInfo } from '../services/geminiService';
 import { Bot, Battery, Signal, Thermometer, ArrowUp, HeartPulse, MapPin, Loader2, Sparkles, AlertTriangle, Info, Siren, Send } from 'lucide-react';
@@ -94,7 +93,7 @@ const Drones: React.FC = () => {
     const [selectedDrone, setSelectedDrone] = useState<Drone | null>(drones[0]);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
-    const [situationalInfo, setSituationalInfo] = useState<{ text: string; groundingChunks: any[] } | null>(null);
+    const [situationalInfo, setSituationalInfo] = useState<SituationalAwarenessData | null>(null);
     const [collisionAlerts, setCollisionAlerts] = useState<string[][]>([]);
     const [manualDest, setManualDest] = useState<{x: string, y: string}>({ x: '80', y: '50' });
     const [groupBy, setGroupBy] = useState<'none' | 'model' | 'missionType'>('none');
@@ -115,9 +114,8 @@ const Drones: React.FC = () => {
         if (!selectedDrone) return;
         setIsFetchingInfo(true);
         setSituationalInfo(null);
-        const location = { latitude: 34.0522, longitude: -118.2437 }; // Mock LA for demo
-        const query = `Provide situational awareness for a drone operating near my current location. Include any temporary flight restrictions (TFRs), weather advisories (like high winds or rain), and notable ground activity or events.`;
-        const result = await getSituationalAwarenessInfo(query, location);
+        const query = `Provide situational awareness for a drone operating in a simulated urban environment map (coordinates 0-100). Include any temporary flight restrictions (TFRs), weather advisories (like high winds or rain), and notable ground activity or events. Generate 1-2 example events.`;
+        const result = await getSituationalAwarenessInfo(query);
         setSituationalInfo(result);
         setIsFetchingInfo(false);
     };
@@ -303,6 +301,64 @@ const Drones: React.FC = () => {
                     <div className="relative h-[600px] w-full bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-700">
                         <div className="absolute inset-0 bg-transparent" style={{ backgroundSize: '50px 50px', backgroundImage: 'linear-gradient(to right, #4a556820 1px, transparent 1px), linear-gradient(to bottom, #4a556820 1px, transparent 1px)' }}></div>
                         
+                        {/* Situational Awareness Overlays */}
+                        <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                            {/* Weather Advisories */}
+                            {situationalInfo?.weatherAdvisories?.map((advisory, index) => {
+                                const colors = {
+                                    Moderate: 'rgba(250, 204, 21, 0.3)', // yellow-400
+                                    Severe: 'rgba(249, 115, 22, 0.3)',   // orange-500
+                                    Extreme: 'rgba(239, 68, 68, 0.3)'   // red-500
+                                };
+                                return (
+                                    <circle
+                                        key={`weather-${index}`}
+                                        cx={`${advisory.zone.x}%`}
+                                        cy={`${advisory.zone.y}%`}
+                                        r={`${advisory.zone.radius}%`}
+                                        fill={colors[advisory.severity] || 'rgba(255, 255, 255, 0.2)'}
+                                        style={{ pointerEvents: 'auto' }}
+                                    >
+                                        <title>{`${advisory.type} (${advisory.severity}): ${advisory.details}`}</title>
+                                    </circle>
+                                );
+                            })}
+                            {/* Flight Restrictions */}
+                            {situationalInfo?.flightRestrictions?.map((restriction, index) => {
+                                if (restriction.shape === 'Circle' && restriction.coordinates.length > 0) {
+                                    return (
+                                        <circle
+                                            key={`tfr-circle-${index}`}
+                                            cx={`${restriction.coordinates[0].x}%`}
+                                            cy={`${restriction.coordinates[0].y}%`}
+                                            r={`${restriction.radius || 10}%`}
+                                            fill="rgba(239, 68, 68, 0.4)"
+                                            stroke="rgba(220, 38, 38, 0.8)"
+                                            strokeWidth="2"
+                                            style={{ pointerEvents: 'auto' }}
+                                        >
+                                             <title>{`${restriction.type}: ${restriction.details}`}</title>
+                                        </circle>
+                                    )
+                                }
+                                if (restriction.shape === 'Polygon' && restriction.coordinates.length > 2) {
+                                    return (
+                                        <polygon
+                                            key={`tfr-poly-${index}`}
+                                            points={restriction.coordinates.map(p => `${p.x}%,${p.y}%`).join(' ')}
+                                            fill="rgba(239, 68, 68, 0.4)"
+                                            stroke="rgba(220, 38, 38, 0.8)"
+                                            strokeWidth="2"
+                                            style={{ pointerEvents: 'auto' }}
+                                        >
+                                            <title>{`${restriction.type}: ${restriction.details}`}</title>
+                                        </polygon>
+                                    )
+                                }
+                                return null;
+                            })}
+                        </svg>
+
                         {/* Selected Drone Patrol Path */}
                         {selectedDrone?.patrolPath && (
                             <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
@@ -351,6 +407,19 @@ const Drones: React.FC = () => {
                                 <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs bg-gray-900/80 px-1 rounded whitespace-nowrap text-white">{drone.id}</span>
                             </div>
                         ))}
+                        
+                        {/* Map Legend */}
+                        <div className="absolute bottom-2 right-2 bg-gray-900/80 p-2 rounded-md border border-gray-700 text-xs text-gray-300 space-y-1">
+                            <h4 className="font-bold">Map Legend</h4>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-full" style={{backgroundColor: 'rgba(250, 204, 21, 0.5)'}}></div>
+                                <span>Weather Advisory</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3" style={{backgroundColor: 'rgba(239, 68, 68, 0.5)'}}></div>
+                                <span>Flight Restriction</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -451,9 +520,9 @@ const Drones: React.FC = () => {
                      <h2 className="text-xl font-semibold mb-4">Situational Awareness</h2>
                      {isFetchingInfo && <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-cyan-500" /></div>}
                      {situationalInfo ? (
-                        <div className="text-gray-300 text-sm whitespace-pre-wrap h-[300px] overflow-y-auto pr-2">{situationalInfo.text}</div>
+                        <div className="text-gray-300 text-sm whitespace-pre-wrap h-[300px] overflow-y-auto pr-2">{situationalInfo.summaryText}</div>
                      ) : !isFetchingInfo && (
-                        <div className="text-gray-500 h-full flex items-center justify-center">Select a drone and click "Get Situational Info".</div>
+                        <div className="text-gray-500 h-full flex items-center justify-center text-center p-4">Select a drone and click "Get Situational Info" for an AI-powered area analysis and map overlay.</div>
                      )}
                 </div>
             </div>

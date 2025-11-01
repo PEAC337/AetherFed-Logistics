@@ -128,3 +128,24 @@ export interface MaintenanceEvent {
     status: MaintenanceStatus;
     notes: string;
 }
+
+export interface WeatherAdvisory {
+    type: 'Wind' | 'Rain' | 'Fog';
+    severity: 'Moderate' | 'Severe' | 'Extreme';
+    zone: { x: number; y: number; radius: number };
+    details: string;
+}
+
+export interface FlightRestriction {
+    type: 'TFR' | 'No-Fly Zone';
+    shape: 'Circle' | 'Polygon';
+    coordinates: { x: number; y: number }[];
+    radius?: number;
+    details: string;
+}
+
+export interface SituationalAwarenessData {
+    weatherAdvisories?: WeatherAdvisory[];
+    flightRestrictions?: FlightRestriction[];
+    summaryText: string;
+}

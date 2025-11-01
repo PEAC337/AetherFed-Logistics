@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentResponse, Modality } from "@google/genai";
-import { AnalyzedFeedback } from '../types';
+import { AnalyzedFeedback, SituationalAwarenessData } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
@@ -68,7 +68,67 @@ const routeOptimizationSchema = {
         }
     },
     required: ["optimizedPath"]
-}
+};
+
+const situationalAwarenessSchema = {
+    type: Type.OBJECT,
+    properties: {
+        weatherAdvisories: {
+            type: Type.ARRAY,
+            description: "List of weather advisories. For the zone, use coordinates from 0 to 100.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    type: { type: Type.STRING, description: "Type of weather, e.g., Wind, Rain, Fog." },
+                    severity: { type: Type.STRING, description: "Severity level, e.g., Moderate, Severe, Extreme." },
+                    zone: {
+                        type: Type.OBJECT,
+                        properties: {
+                            x: { type: Type.NUMBER, description: "Center x-coordinate (0-100)." },
+                            y: { type: Type.NUMBER, description: "Center y-coordinate (0-100)." },
+                            radius: { type: Type.NUMBER, description: "Radius of the zone (as a percentage of map size, 0-50)." },
+                        },
+                        required: ["x", "y", "radius"],
+                    },
+                    details: { type: Type.STRING, description: "Brief details, e.g., 'Gusts up to 40 kph'." },
+                },
+                 required: ["type", "severity", "zone", "details"],
+            },
+        },
+        flightRestrictions: {
+            type: Type.ARRAY,
+            description: "List of flight restrictions. For coordinates, use values from 0 to 100.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    type: { type: Type.STRING, description: "Type of restriction, e.g., TFR, No-Fly Zone." },
+                    shape: { type: Type.STRING, description: "Shape of the zone, 'Circle' or 'Polygon'." },
+                    coordinates: {
+                        type: Type.ARRAY,
+                        description: "For a Polygon, a list of vertices. For a Circle, a single vertex for the center.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                x: { type: Type.NUMBER },
+                                y: { type: Type.NUMBER },
+                            },
+                             required: ["x", "y"],
+                        },
+                    },
+                    radius: { type: Type.NUMBER, description: "Radius if shape is a Circle (as a percentage of map size, 0-50)." },
+                    details: { type: Type.STRING, description: "Reason for the restriction, e.g., 'VIP Movement until 15:00'." },
+                },
+                required: ["type", "shape", "coordinates", "details"],
+            },
+        },
+        summaryText: {
+            type: Type.STRING,
+            description: "A human-readable summary of the overall situation.",
+        },
+    },
+    required: ["summaryText"],
+};
+
 
 export const analyzeFeedback = async (feedbackText: string): Promise<AnalyzedFeedback | null> => {
     return withRetry(async () => {
@@ -139,20 +199,19 @@ export const editImageWithText = async (base64ImageData: string, mimeType: strin
     }, "editing image");
 };
 
-export const getSituationalAwarenessInfo = async (query: string, location: { latitude: number; longitude: number; }): Promise<{ text: string; groundingChunks: any[] } | null> => {
+export const getSituationalAwarenessInfo = async (query: string): Promise<SituationalAwarenessData | null> => {
     return withRetry(async () => {
-        const response: GenerateContentResponse = await ai.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: query,
             config: {
-                tools: [{googleMaps: {}}],
-                toolConfig: { retrievalConfig: { latLng: location } }
+                responseMimeType: "application/json",
+                responseSchema: situationalAwarenessSchema,
             },
         });
-        const text = response.text;
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        return { text, groundingChunks };
-    }, "fetching Maps Grounding info");
+        const jsonString = response.text.trim();
+        return JSON.parse(jsonString) as SituationalAwarenessData;
+    }, "fetching situational awareness");
 };
 
 export const getGroundedNews = async (query: string): Promise<{ text: string; groundingChunks: any[] } | null> => {
