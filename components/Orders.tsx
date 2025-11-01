@@ -75,12 +75,12 @@ const mockOrders: Order[] = [
 
 const getStatusColor = (status: OrderStatus) => {
   switch (status) {
-    case OrderStatus.Delivered: return 'bg-green-500 text-green-900 hover:bg-green-400';
-    case OrderStatus.Shipped: return 'bg-blue-500 text-blue-900 hover:bg-blue-400';
-    case OrderStatus.Processing: return 'bg-yellow-500 text-yellow-900 hover:bg-yellow-400';
-    case OrderStatus.Pending: return 'bg-orange-500 text-orange-900 hover:bg-orange-400';
-    case OrderStatus.Cancelled: return 'bg-red-500 text-red-900 hover:bg-red-400';
-    default: return 'bg-gray-500 text-gray-900 hover:bg-gray-400';
+    case OrderStatus.Delivered: return 'bg-green-500 text-green-900';
+    case OrderStatus.Shipped: return 'bg-blue-500 text-blue-900';
+    case OrderStatus.Processing: return 'bg-yellow-500 text-yellow-900';
+    case OrderStatus.Pending: return 'bg-orange-500 text-orange-900';
+    case OrderStatus.Cancelled: return 'bg-red-500 text-red-900';
+    default: return 'bg-gray-500 text-gray-900';
   }
 };
 
@@ -209,7 +209,7 @@ const Orders: React.FC = () => {
                       <td className="p-4">{order.customerName}</td>
                       <td className="p-4">{order.date}</td>
                       <td className="p-4">
-                        <span className={`px-2 py-1 text-xs font-bold rounded-full transition-colors duration-200 ${getStatusColor(order.status)}`}>
+                        <span className={`px-2 py-1 text-xs font-bold rounded-full transition-all duration-200 ${getStatusColor(order.status)} hover:brightness-110 hover:scale-105`}>
                           {order.status}
                         </span>
                       </td>
