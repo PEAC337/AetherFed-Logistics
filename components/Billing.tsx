@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { InvoiceItem } from '../types';
 import { InvoiceStatus } from '../types';
-import { DollarSign, FileText, Bot, CreditCard, Copy, Check } from 'lucide-react';
+import { DollarSign, FileText, Bot, CreditCard, Copy, Check, Landmark } from 'lucide-react';
 
 const mockBillingData: InvoiceItem[] = [
     {
@@ -74,6 +74,32 @@ const MetricCard: React.FC<{ title: string; value: string; icon: React.ElementTy
     </div>
   </div>
 );
+
+const AccountingPlatform: React.FC<{ name: string, accountNumber: string, routingNumber: string, icon: React.ElementType }> = ({ name, accountNumber, routingNumber, icon: Icon }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+        navigator.clipboard.writeText(accountNumber);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <div className="bg-gray-700/50 p-3 rounded-lg flex items-center justify-between">
+            <div className="flex items-center">
+                <Icon className="h-8 w-8 mr-3 text-cyan-400"/>
+                <div>
+                    <p className="font-semibold text-white">{name}</p>
+                    <p className="text-xs text-gray-400 font-mono">
+                        Acct: {accountNumber} | Rout: {routingNumber}
+                    </p>
+                </div>
+            </div>
+            <button onClick={handleCopy} className="p-2 rounded-md hover:bg-gray-600 transition-colors" title="Copy Account Number">
+                {copied ? <Check className="h-5 w-5 text-green-400" /> : <Copy className="h-5 w-5 text-gray-400" />}
+            </button>
+        </div>
+    );
+};
 
 const WalletAddress: React.FC<{ name: string, address: string, iconUrl: string }> = ({ name, address, iconUrl }) => {
     const [copied, setCopied] = useState(false);
@@ -168,8 +194,14 @@ const Billing: React.FC = () => {
                 
                 <div className="bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Payment Configuration & Settlement</h2>
-                    <p className="text-sm text-gray-400">Use the addresses below for service payment settlements via cryptocurrency.</p>
+                    <p className="text-sm text-gray-400">Use the details below for service payment settlements.</p>
                     <div className="space-y-3">
+                        <AccountingPlatform 
+                            name="AetherFed Consolidated Banking"
+                            accountNumber="9876543210"
+                            routingNumber="012345678"
+                            icon={Landmark}
+                        />
                         <WalletAddress 
                             name="Bitcoin (BTC)"
                             address="bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"
@@ -182,7 +214,7 @@ const Billing: React.FC = () => {
                         />
                     </div>
                      <p className="text-xs text-gray-500 pt-2 border-t border-gray-700">
-                        Please ensure you are sending the correct currency to the specified address. Transactions are irreversible.
+                        Please ensure you are sending the correct currency to the specified address. Cryptocurrency transactions are irreversible.
                     </p>
                 </div>
             </div>

@@ -5,7 +5,7 @@ import { MaintenanceStatus, MaintenanceType, DroneStatus } from '../types';
 import { Wrench, PlusCircle, Bot, HeartPulse, Clock, Calendar } from 'lucide-react';
 
 // Mock Data - In a real app, this would come from an API
-const initialDrones: Omit<Drone, 'position' | 'telemetry' | 'estimatedFlightTime' | 'payload' | 'orderId' | 'currentPatrolWaypoint' | 'patrolPath'>[] = Array.from({ length: 10 }, (_, i) => {
+const initialDrones: Omit<Drone, 'position' | 'telemetry' | 'estimatedFlightTime' | 'payload' | 'orderId' | 'currentPatrolWaypoint' | 'patrolPath' | 'destination' | 'telemetryHistory'>[] = Array.from({ length: 10 }, (_, i) => {
     const flightHours = Math.floor(Math.random() * 200) + 50;
     const isPatrol = i % 3 === 1;
     return {

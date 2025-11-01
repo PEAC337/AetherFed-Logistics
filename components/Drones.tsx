@@ -128,12 +128,13 @@ const Drones: React.FC = () => {
         const y = parseInt(manualDest.y, 10);
 
         if (!isNaN(x) && !isNaN(y) && x >= 0 && x <= 100 && y >= 0 && y <= 100) {
-            const updatedDrone = {
+            const updatedDrone: Drone = {
                 ...selectedDrone,
                 status: DroneStatus.InTransit,
                 destination: { x, y },
-                missionType: 'Delivery' as 'Delivery',
+                missionType: 'Delivery',
                 patrolPath: undefined,
+                currentPatrolWaypoint: undefined,
             };
             setDrones(drones.map(d => (d.id === selectedDrone.id ? updatedDrone : d)));
             setSelectedDrone(updatedDrone);
@@ -147,12 +148,18 @@ const Drones: React.FC = () => {
         const interval = setInterval(() => {
             setDrones(prevDrones =>
                 prevDrones.map(drone => {
-                    if ([DroneStatus.Idle, DroneStatus.Maintenance, DroneStatus.Charging].includes(drone.status)) {
+                    if ([DroneStatus.Idle, DroneStatus.Maintenance].includes(drone.status)) {
+                         if (drone.status === DroneStatus.Charging) {
+                            const newBattery = Math.min(100, drone.battery + 0.5);
+                            if (newBattery === 100) {
+                                return { ...drone, battery: newBattery, status: DroneStatus.Idle };
+                            }
+                            return { ...drone, battery: newBattery };
+                        }
                         return drone;
                     }
-                    
+
                     let target: { x: number; y: number } | undefined;
-                    let newStatus = drone.status;
 
                     if (drone.status === DroneStatus.Patrolling && drone.patrolPath && drone.currentPatrolWaypoint !== undefined) {
                         target = drone.patrolPath[drone.currentPatrolWaypoint];
@@ -174,21 +181,39 @@ const Drones: React.FC = () => {
                         if (drone.status === DroneStatus.Patrolling && drone.patrolPath && drone.currentPatrolWaypoint !== undefined) {
                             const nextWaypoint = (drone.currentPatrolWaypoint + 1) % drone.patrolPath.length;
                             return { ...drone, currentPatrolWaypoint: nextWaypoint };
-                        } else if (drone.status === DroneStatus.Delivering) {
-                            newStatus = DroneStatus.Returning;
-                        } else if (drone.status === DroneStatus.InTransit) {
-                            newStatus = DroneStatus.Idle;
-                        } else if (drone.status === DroneStatus.Returning) {
-                            newStatus = drone.battery < LOW_BATTERY_THRESHOLD ? DroneStatus.Charging : DroneStatus.Idle;
                         }
-                        return { ...drone, status: newStatus };
+                        if (drone.status === DroneStatus.Delivering) {
+                            return { ...drone, status: DroneStatus.Returning, destination: undefined };
+                        }
+                        if (drone.status === DroneStatus.InTransit) {
+                            return { ...drone, status: DroneStatus.Idle, destination: undefined };
+                        }
+                        if (drone.status === DroneStatus.Returning) {
+                            const finalStatus = drone.battery < 100 ? DroneStatus.Charging : DroneStatus.Idle;
+                            return { ...drone, status: finalStatus, destination: undefined };
+                        }
                     }
 
+                    // Move towards target
                     const speed = 0.5;
                     const newX = drone.position.x + (dx / dist) * speed;
                     const newY = drone.position.y + (dy / dist) * speed;
+                    
+                    // Battery drain simulation
+                    let batteryDrain = 0.01; // Idle drain
+                    if (drone.status === DroneStatus.Delivering || drone.status === DroneStatus.InTransit) batteryDrain = 0.05;
+                    if (drone.status === DroneStatus.Patrolling || drone.status === DroneStatus.Returning) batteryDrain = 0.03;
+                    
+                    let newBattery = Math.max(0, drone.battery - batteryDrain);
+                    let newStatus = drone.status;
 
-                    return { ...drone, position: { x: newX, y: newY } };
+                    if (newBattery > 0 && newBattery < LOW_BATTERY_THRESHOLD && drone.status !== DroneStatus.Returning) {
+                        newStatus = DroneStatus.Returning;
+                    } else if (newBattery === 0) {
+                        newStatus = DroneStatus.Idle; // Landed
+                    }
+
+                    return { ...drone, position: { x: newX, y: newY }, battery: newBattery, status: newStatus };
                 })
             );
         }, 200);
@@ -206,11 +231,29 @@ const Drones: React.FC = () => {
                 for (let j = i + 1; j < activeDrones.length; j++) {
                     const d1 = activeDrones[i];
                     const d2 = activeDrones[j];
+                    
                     const dx = d1.position.x - d2.position.x;
                     const dy = d1.position.y - d2.position.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance < COLLISION_THRESHOLD) {
+                    const altDiff = Math.abs(d1.telemetry.altitude - d2.telemetry.altitude);
+
+                    // Converging paths check
+                    const d1Speed = 0.5; // Assuming constant speed for this check
+                    const d2Speed = 0.5;
+                    const d1Target = d1.destination || (d1.patrolPath ? d1.patrolPath[d1.currentPatrolWaypoint!] : d1.position);
+                    const d2Target = d2.destination || (d2.patrolPath ? d2.patrolPath[d2.currentPatrolWaypoint!] : d2.position);
+                    
+                    const vel1 = { x: (d1Target.x - d1.position.x) * d1Speed, y: (d1Target.y - d1.position.y) * d1Speed };
+                    const vel2 = { x: (d2Target.x - d2.position.x) * d2Speed, y: (d2Target.y - d2.position.y) * d2Speed };
+
+                    const relVel = { x: vel1.x - vel2.x, y: vel1.y - vel2.y };
+                    const relPos = { x: d1.position.x - d2.position.x, y: d1.position.y - d2.position.y };
+
+                    const dotProduct = relPos.x * relVel.x + relPos.y * relVel.y;
+
+
+                    if (distance < COLLISION_THRESHOLD && altDiff < 10 && dotProduct < 0) {
                         alerts.push([d1.id, d2.id]);
                     }
                 }
@@ -245,6 +288,8 @@ const Drones: React.FC = () => {
         }, {} as Record<string, Drone[]>);
     }, [drones, groupBy]);
 
+    const isDispatchable = selectedDrone && [DroneStatus.Idle, DroneStatus.Patrolling].includes(selectedDrone.status);
+
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-center">
@@ -258,7 +303,7 @@ const Drones: React.FC = () => {
                     <div className="relative h-[600px] w-full bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-700">
                         <div className="absolute inset-0 bg-transparent" style={{ backgroundSize: '50px 50px', backgroundImage: 'linear-gradient(to right, #4a556820 1px, transparent 1px), linear-gradient(to bottom, #4a556820 1px, transparent 1px)' }}></div>
                         
-                        {/* Selected Drone Path */}
+                        {/* Selected Drone Patrol Path */}
                         {selectedDrone?.patrolPath && (
                             <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                                 <polyline
@@ -271,6 +316,29 @@ const Drones: React.FC = () => {
                             </svg>
                         )}
                         
+                        {/* Selected Drone Manual Destination Path */}
+                        {selectedDrone?.destination && (selectedDrone.status === DroneStatus.InTransit || selectedDrone.status === DroneStatus.Delivering) && (
+                            <>
+                                <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
+                                    <line
+                                        x1={`${selectedDrone.position.x}%`} y1={`${selectedDrone.position.y}%`}
+                                        x2={`${selectedDrone.destination.x}%`} y2={`${selectedDrone.destination.y}%`}
+                                        stroke="#22d3ee" strokeWidth="2" strokeDasharray="6 6"
+                                    />
+                                </svg>
+                                <div
+                                    className="absolute"
+                                    style={{
+                                        left: `${selectedDrone.destination.x}%`,
+                                        top: `${selectedDrone.destination.y}%`,
+                                        transform: 'translate(-50%, -50%)'
+                                    }}
+                                >
+                                    <MapPin className="h-7 w-7 text-green-400 animate-pulse" />
+                                </div>
+                            </>
+                        )}
+
                         {/* Drones */}
                         {drones.map(drone => (
                             <div
@@ -302,7 +370,7 @@ const Drones: React.FC = () => {
                             </select>
                         </div>
                         <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2">
-                            {Object.entries(groupedDrones).map(([groupName, dronesInGroup]) => (
+                             {Object.entries(groupedDrones).map(([groupName, dronesInGroup]) => (
                                 <React.Fragment key={groupName}>
                                     {groupBy !== 'none' && (
                                         <h3 className="text-xs font-bold text-gray-400 uppercase pt-2 sticky top-0 bg-gray-800 z-10">{groupName}</h3>
@@ -311,9 +379,12 @@ const Drones: React.FC = () => {
                                         <div key={d.id} onClick={() => setSelectedDrone(d)} className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${selectedDrone?.id === d.id ? 'bg-gray-700 border-cyan-500' : 'bg-gray-700/50 border-transparent hover:border-gray-600'}`}>
                                             <div className="flex justify-between items-center mb-2">
                                                 <p className="font-bold text-white">{d.id}</p>
-                                                <span className={getStatusPill(d.status)}>{d.status}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-mono text-sm text-gray-300">{d.battery}%</span>
+                                                    <div className="w-16 bg-gray-600 rounded-full h-1.5"><div className={`${getBarColor(d.battery)} h-1.5 rounded-full`} style={{ width: `${d.battery}%` }}></div></div>
+                                                </div>
                                             </div>
-                                            <div className="w-full bg-gray-600 rounded-full h-1.5"><div className={`${getBarColor(d.battery)} h-1.5 rounded-full`} style={{ width: `${d.battery}%` }}></div></div>
+                                            <div className={getStatusPill(d.status)}>{d.status}</div>
                                         </div>
                                     ))}
                                 </React.Fragment>
@@ -324,7 +395,6 @@ const Drones: React.FC = () => {
                          <div className="bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
                              <h2 className="text-xl font-semibold">{selectedDrone.id} - {selectedDrone.model}</h2>
                              
-                             {/* Telemetry */}
                              <div className="grid grid-cols-2 gap-3">
                                  <TelemetryCard icon={Battery} label="Battery" value={selectedDrone.battery} unit="%" />
                                  <TelemetryCard icon={HeartPulse} label="Health" value={selectedDrone.health} unit="%" />
@@ -334,7 +404,6 @@ const Drones: React.FC = () => {
                                  <TelemetryCard icon={MapPin} label="Position" value={`${selectedDrone.position.x.toFixed(1)}, ${selectedDrone.position.y.toFixed(1)}`} unit="" />
                              </div>
 
-                             {/* Actions */}
                             <div>
                                 {selectedDrone.missionType === 'Patrol' && (
                                     <button onClick={handleOptimizeRoute} disabled={isOptimizing} className="w-full flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors disabled:opacity-50">
@@ -344,13 +413,17 @@ const Drones: React.FC = () => {
                                 <button onClick={handleFetchInfo} disabled={isFetchingInfo} className="w-full flex items-center justify-center bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors disabled:opacity-50 mt-2">
                                     {isFetchingInfo ? <Loader2 className="h-5 w-5 mr-2 animate-spin"/> : <Info className="h-5 w-5 mr-2" />} Get Situational Info
                                 </button>
-                                <div className="mt-2 p-2 bg-gray-700/50 rounded-lg space-y-2">
-                                     <p className="text-xs text-gray-400">Manual Override:</p>
+                                
+                                <div className="mt-4 p-3 bg-gray-700/50 rounded-lg space-y-2">
+                                     <h4 className="text-sm font-semibold text-gray-300">Manual Control</h4>
                                      <div className="flex items-center gap-2">
-                                         <input type="text" value={manualDest.x} onChange={e => setManualDest({...manualDest, x: e.target.value})} placeholder="X" className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center"/>
-                                         <input type="text" value={manualDest.y} onChange={e => setManualDest({...manualDest, y: e.target.value})} placeholder="Y" className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center"/>
-                                         <button onClick={handleSetManualDestination} className="p-2 bg-cyan-600 hover:bg-cyan-700 rounded"><Send className="h-4 w-4"/></button>
+                                         <input type="text" value={manualDest.x} onChange={e => setManualDest({...manualDest, x: e.target.value})} placeholder="X" className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center disabled:opacity-50" disabled={!isDispatchable} />
+                                         <input type="text" value={manualDest.y} onChange={e => setManualDest({...manualDest, y: e.target.value})} placeholder="Y" className="w-full bg-gray-900 border border-gray-600 rounded p-1 text-center disabled:opacity-50" disabled={!isDispatchable} />
+                                         <button onClick={handleSetManualDestination} className="p-2 bg-green-600 hover:bg-green-700 rounded disabled:bg-gray-600 disabled:cursor-not-allowed" disabled={!isDispatchable} title="Dispatch Drone">
+                                             <Send className="h-4 w-4"/>
+                                         </button>
                                      </div>
+                                     {!isDispatchable && <p className="text-xs text-gray-500 text-center">Drone must be Idle or Patrolling to dispatch.</p>}
                                 </div>
                             </div>
                          </div>
@@ -358,7 +431,6 @@ const Drones: React.FC = () => {
                 </div>
             </div>
             
-            {/* Telemetry Chart and Situational Info */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-gray-800 rounded-lg shadow-lg p-6">
                     <h2 className="text-xl font-semibold mb-4">Telemetry History for {selectedDrone?.id}</h2>
@@ -386,7 +458,6 @@ const Drones: React.FC = () => {
                 </div>
             </div>
 
-            {/* Alerts */}
             {(collisionAlerts.length > 0 || drones.some(d => d.battery < LOW_BATTERY_THRESHOLD)) && (
                 <div>
                      <h2 className="text-2xl font-bold text-yellow-400 mb-4 flex items-center"><Siren className="h-6 w-6 mr-3"/>Active Alerts</h2>
@@ -396,16 +467,16 @@ const Drones: React.FC = () => {
                                 <AlertTriangle className="h-6 w-6 mr-3"/>
                                 <div>
                                     <p className="font-bold">Collision Warning</p>
-                                    <p className="text-sm">Drones {pair[0]} and {pair[1]} are in close proximity.</p>
+                                    <p className="text-sm">Drones {pair[0]} and {pair[1]} are converging.</p>
                                 </div>
                             </div>
                          ))}
-                         {drones.filter(d => d.battery < LOW_BATTERY_THRESHOLD).map(d => (
+                         {drones.filter(d => d.battery < LOW_BATTERY_THRESHOLD && d.status !== DroneStatus.Charging).map(d => (
                               <div key={d.id} className="bg-red-900/50 border border-red-600 text-red-300 p-4 rounded-lg flex items-center">
                                 <Battery className="h-6 w-6 mr-3"/>
                                 <div>
                                     <p className="font-bold">Low Battery</p>
-                                    <p className="text-sm">Drone {d.id} at {d.battery}%. Returning to base.</p>
+                                    <p className="text-sm">Drone {d.id} at {d.battery.toFixed(0)}%. Returning to base.</p>
                                 </div>
                             </div>
                          ))}
