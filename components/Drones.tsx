@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Drone } from '../types';
@@ -49,7 +48,6 @@ const getStatusPill = (status: DroneStatus) => {
     switch (status) {
         case DroneStatus.Idle: return `${baseClasses} bg-gray-500 text-gray-900`;
         case DroneStatus.Delivering: return `${baseClasses} bg-cyan-500 text-cyan-900 animate-pulse`;
-        // FIX: Corrected typo from Drone_status to DroneStatus
         case DroneStatus.InTransit: return `${baseClasses} bg-sky-500 text-sky-900 animate-pulse`;
         case DroneStatus.Returning: return `${baseClasses} bg-teal-500 text-teal-900 animate-pulse`;
         case DroneStatus.Patrolling: return `${baseClasses} bg-purple-500 text-purple-900 animate-pulse`;
@@ -142,8 +140,6 @@ const Drones: React.FC = () => {
                     destination: { x: destX, y: destY },
                     patrolPath: undefined,
                     currentPatrolWaypoint: undefined,
-                    // FIX: Use 'as const' to prevent TypeScript from widening the string literal type to 'string'.
-                    // This ensures the object conforms to the Drone type.
                     missionType: 'Delivery' as const
                 };
             }
@@ -154,49 +150,98 @@ const Drones: React.FC = () => {
         setSelectedDrone(newlySelectedDrone);
     };
 
-    // Drone simulation and collision detection
+    // Drone simulation and enhanced collision detection
     useEffect(() => {
         const interval = setInterval(() => {
+            const droneVelocities = new Map<string, { vx: number; vy: number }>();
+
             const updatedDrones = drones.map(drone => {
-                // Manually dispatched drone movement
+                let velocity = { vx: 0, vy: 0 };
+                let newPosition = { ...drone.position };
+                let newStatus = drone.status;
+                let newDestination = drone.destination;
+                let newTelemetry = { ...drone.telemetry };
+
+                // --- Drone Movement Simulation ---
                 if (drone.status === DroneStatus.InTransit && drone.destination) {
-                    const speed = 2.0; // units per interval
+                    const speed = 2.0;
                     const dx = drone.destination.x - drone.position.x;
                     const dy = drone.destination.y - drone.position.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance < speed) {
-                        return { ...drone, position: drone.destination, status: DroneStatus.Idle, destination: undefined };
+                        newPosition = drone.destination;
+                        newStatus = DroneStatus.Idle;
+                        newDestination = undefined;
+                    } else {
+                        const moveX = (dx / distance) * speed;
+                        const moveY = (dy / distance) * speed;
+                        velocity = { vx: moveX, vy: moveY };
+                        newPosition = { x: drone.position.x + moveX, y: drone.position.y + moveY };
                     }
-
-                    const moveX = (dx / distance) * speed;
-                    const moveY = (dy / distance) * speed;
-                    return { ...drone, position: { x: drone.position.x + moveX, y: drone.position.y + moveY } };
+                } else if ([DroneStatus.Delivering, DroneStatus.Returning, DroneStatus.Patrolling].includes(drone.status)) {
+                    const moveX = (Math.random() - 0.5) * 2;
+                    const moveY = (Math.random() - 0.5) * 2;
+                    velocity = { vx: moveX, vy: moveY };
+                    newPosition = {
+                        x: Math.max(0, Math.min(100, drone.position.x + moveX)),
+                        y: Math.max(0, Math.min(100, drone.position.y + moveY)),
+                    };
                 }
 
-                // Random walk for other active statuses
-                if ([DroneStatus.Delivering, DroneStatus.Returning, DroneStatus.Patrolling].includes(drone.status)) {
-                    const newX = Math.max(0, Math.min(100, drone.position.x + (Math.random() - 0.5) * 2));
-                    const newY = Math.max(0, Math.min(100, drone.position.y + (Math.random() - 0.5) * 2));
-                    return { ...drone, position: { x: newX, y: newY } };
+                droneVelocities.set(drone.id, velocity);
+
+                // --- Altitude Fluctuation Simulation ---
+                if (![DroneStatus.Idle, DroneStatus.Maintenance, DroneStatus.Charging].includes(newStatus) && newTelemetry.altitude > 0) {
+                    newTelemetry.altitude = Math.max(10, newTelemetry.altitude + (Math.random() - 0.5) * 5);
                 }
 
-                return drone;
+                return {
+                    ...drone,
+                    position: newPosition,
+                    status: newStatus,
+                    destination: newDestination,
+                    telemetry: newTelemetry,
+                };
             });
 
-
-            // Collision Detection
+            // --- Enhanced Collision Detection ---
             const alerts: string[][] = [];
             for (let i = 0; i < updatedDrones.length; i++) {
                 for (let j = i + 1; j < updatedDrones.length; j++) {
                     const d1 = updatedDrones[i];
                     const d2 = updatedDrones[j];
-                    // Ignore idle/maintenance drones
-                    if (d1.status === DroneStatus.Idle || d1.status === DroneStatus.Maintenance || d2.status === DroneStatus.Idle || d2.status === DroneStatus.Maintenance) {
+                    
+                    if ([DroneStatus.Idle, DroneStatus.Maintenance, DroneStatus.Charging].includes(d1.status) || [DroneStatus.Idle, DroneStatus.Maintenance, DroneStatus.Charging].includes(d2.status)) {
                         continue;
                     }
-                    const distance = Math.sqrt(Math.pow(d1.position.x - d2.position.x, 2) + Math.pow(d1.position.y - d2.position.y, 2));
-                    if (distance < COLLISION_THRESHOLD) {
+
+                    // 1. Check horizontal distance
+                    const horizontalDistance = Math.sqrt(Math.pow(d1.position.x - d2.position.x, 2) + Math.pow(d1.position.y - d2.position.y, 2));
+                    if (horizontalDistance >= COLLISION_THRESHOLD) {
+                        continue;
+                    }
+
+                    // 2. Check vertical distance (altitude)
+                    const altitudeDifference = Math.abs(d1.telemetry.altitude - d2.telemetry.altitude);
+                    if (altitudeDifference > 10) {
+                        continue;
+                    }
+                    
+                    // 3. Check if they are moving towards each other
+                    const v1 = droneVelocities.get(d1.id)!;
+                    const v2 = droneVelocities.get(d2.id)!;
+                    
+                    const relativePositionX = d2.position.x - d1.position.x;
+                    const relativePositionY = d2.position.y - d1.position.y;
+                    const relativeVelocityX = v2.vx - v1.vx;
+                    const relativeVelocityY = v2.vy - v1.vy;
+                    
+                    // Dot product of relative position and relative velocity.
+                    // A negative value means they are converging.
+                    const dotProduct = (relativePositionX * relativeVelocityX) + (relativePositionY * relativeVelocityY);
+
+                    if (dotProduct < 0) {
                         alerts.push([d1.id, d2.id]);
                     }
                 }
@@ -255,7 +300,7 @@ const Drones: React.FC = () => {
                         <>
                             <div className="bg-gray-800 rounded-lg shadow-lg p-6">
                                 <h2 className="text-2xl font-bold mb-4">{selectedDrone.id} - {selectedDrone.model}</h2>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><TelemetryCard icon={HeartPulse} label="Health" value={selectedDrone.health} unit="%" /><TelemetryCard icon={Signal} label="Signal" value={selectedDrone.telemetry.signalStrength} unit="%" /><TelemetryCard icon={Thermometer} label="Temp" value={selectedDrone.telemetry.temperature} unit="°C" /><TelemetryCard icon={ArrowUp} label="Altitude" value={selectedDrone.telemetry.altitude} unit="m" /></div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><TelemetryCard icon={HeartPulse} label="Health" value={selectedDrone.health} unit="%" /><TelemetryCard icon={Signal} label="Signal" value={selectedDrone.telemetry.signalStrength} unit="%" /><TelemetryCard icon={Thermometer} label="Temp" value={selectedDrone.telemetry.temperature} unit="°C" /><TelemetryCard icon={ArrowUp} label="Altitude" value={Math.round(selectedDrone.telemetry.altitude)} unit="m" /></div>
                             </div>
                             
                              <div className="bg-gray-800 rounded-lg shadow-lg p-4 h-96">

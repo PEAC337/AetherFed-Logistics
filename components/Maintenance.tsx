@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Drone, MaintenanceEvent } from '../types';
 import { MaintenanceStatus, MaintenanceType, DroneStatus } from '../types';
 import { Wrench, PlusCircle, Bot, HeartPulse, Clock, Calendar } from 'lucide-react';
@@ -51,6 +52,12 @@ const Maintenance: React.FC = () => {
         notes: ''
     });
 
+    const topDronesByFlightHours = useMemo(() => {
+        return [...drones]
+            .sort((a, b) => b.flightHours - a.flightHours)
+            .slice(0, 5);
+    }, [drones]);
+
     const handleScheduleEvent = (e: React.FormEvent) => {
         e.preventDefault();
         const finalEvent: MaintenanceEvent = {
@@ -65,7 +72,7 @@ const Maintenance: React.FC = () => {
     return (
         <div className="space-y-8">
             <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-white">Maintenance Schedule</h1>
+                <h1 className="text-3xl font-bold text-white">Maintenance Hub</h1>
                 <button onClick={() => setIsModalOpen(true)} className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors">
                     <PlusCircle className="h-5 w-5 mr-2" />
                     Schedule Maintenance
@@ -100,6 +107,21 @@ const Maintenance: React.FC = () => {
                         </div>
                     ))}
                 </div>
+            </div>
+
+            {/* Flight Hours Chart */}
+            <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Top 5 Drones by Flight Hours</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={topDronesByFlightHours} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
+                        <XAxis dataKey="id" stroke="#a0aec0" />
+                        <YAxis stroke="#a0aec0" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1a202c', border: '1px solid #4a5568' }} />
+                        <Legend />
+                        <Bar dataKey="flightHours" name="Flight Hours" fill="#06b6d4" />
+                    </BarChart>
+                </ResponsiveContainer>
             </div>
 
             {/* Maintenance Schedule Table */}
